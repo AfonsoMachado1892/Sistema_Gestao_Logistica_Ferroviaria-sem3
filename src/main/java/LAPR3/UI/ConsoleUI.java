@@ -1,0 +1,96 @@
+package LAPR3.UI;
+
+import LAPR3.controller.DataController;
+import LAPR3.UI.menu.MainMenu;
+import LAPR3.UI.utils.InputValidator;
+import ESINF.repository.RailwayNetworkRepository;
+
+import java.util.Scanner;
+
+/**
+ * Main console user interface for the Cargo Handling System
+ * Implements USLP02 - User-friendly text-based interface
+ * Updated to support USLP03 - Travel Time Calculation
+ */
+public class ConsoleUI {
+
+    private final Scanner scanner;
+    private final DataController dataController;
+    private final MainMenu mainMenu;
+    private final InputValidator validator;
+    private boolean running;
+
+    public ConsoleUI() {
+        this.scanner = new Scanner(System.in);
+        RailwayNetworkRepository railwayNetworkRepository = new RailwayNetworkRepository();
+        this.dataController = new DataController(railwayNetworkRepository);
+        this.validator = new InputValidator(scanner);
+        this.mainMenu = new MainMenu(scanner, dataController, validator);
+        this.running = true;
+    }
+
+    /**
+     * Main execution loop
+     */
+    public void run() {
+        displayWelcomeMessage();
+
+        while (running) {
+            try {
+                mainMenu.display();
+                int choice = validator.readInt("Enter your choice: ", 0, 21);
+
+                if (choice == 0) {
+                    if (confirmExit()) {
+                        running = false;
+                    }
+                } else {
+                    mainMenu.handleChoice(choice);
+                }
+
+                if (running) {
+                    pauseForUser();
+                }
+
+            } catch (Exception e) {
+                System.err.println("Error: " + e.getMessage());
+                System.out.println("Please try again.");
+                pauseForUser();
+            }
+        }
+
+        scanner.close();
+    }
+
+    private void displayWelcomeMessage() {
+        System.out.println("Welcome, Station Storage Manager!");
+        System.out.println("This system allows you to:");
+        System.out.println("  • Import and manage warehouse data");
+        System.out.println("  • Process wagon unloading operations");
+        System.out.println("  • Manage order eligibility and allocation");
+        System.out.println("  • Generate picking plans and path sequences");
+        System.out.println("  • Handle product returns and quarantine");
+        System.out.println("  • Query railway stations by time zones and coordinates");
+        System.out.println("  • Calculate travel times between stations");
+        System.out.println();
+    }
+
+    private boolean confirmExit() {
+        System.out.print("\nAre you sure you want to exit? (y/n): ");
+        String response = scanner.nextLine().trim().toLowerCase();
+        return response.equals("y") || response.equals("yes");
+    }
+
+    private void pauseForUser() {
+        System.out.println("\nPress ENTER to continue...");
+        scanner.nextLine();
+        clearScreen();
+    }
+
+    private void clearScreen() {
+        // Print blank lines for cleaner display
+        for (int i = 0; i < 2; i++) {
+            System.out.println();
+        }
+    }
+}

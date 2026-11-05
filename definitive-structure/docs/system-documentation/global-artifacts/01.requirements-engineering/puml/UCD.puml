@@ -1,0 +1,72 @@
+@startuml
+'skinparam monochrome true
+skinparam packageStyle rectangle
+'skinparam shadowing false
+
+title Use Case Diagram
+
+left to right direction
+
+    actor DatabaseAdministrator
+    actor InventoryManagement
+    actor LogisticsPlanner
+    actor SystemUser
+    actor TerminalOperator
+    actor WarehousePlanner
+    actor Picker
+    actor QualityOperator
+
+usecase "USBD01 - Create a data dictionary/glossary" as USBD01
+DatabaseAdministrator --> USBD01
+
+usecase "USBD02 - Create the relational model (logical level)" as USBD02
+DatabaseAdministrator --> USBD02
+
+usecase "USBD03 - Instantiate the relational model using SQL DDL code" as USBD03
+DatabaseAdministrator --> USBD03
+
+usecase "USBD04 - Insert provided data into the new database" as USBD04
+DatabaseAdministrator --> USBD04
+
+usecase "USBD06 - List all line segments of a given gauge, including the line they belong to" as USBD06
+SystemUser --> USBD06
+
+usecase "USBD11 - List all wagons of a given gauge" as USBD11
+SystemUser --> USBD11
+
+usecase "USBD15 - Know how many lines depart from a given endpoint" as USBD15
+SystemUser --> USBD15
+
+usecase "USBD17 - Know the average length of the segments in a given line, by track type" as USBD17
+SystemUser --> USBD17
+
+usecase "USEI01 - Wagons Unloading (Inventory replenishment)" as USEI01
+InventoryManagement --> TerminalOperator
+TerminalOperator --> USEI01
+
+usecase "USEI02 - Order Eligibility & Allocation" as USEI02
+InventoryManagement --> WarehousePlanner
+WarehousePlanner --> USEI02
+
+usecase "USEI03 - Picking Plans" as USEI03
+InventoryManagement --> WarehousePlanner
+WarehousePlanner --> USEI03
+
+usecase "USEI04 - Pick Path Sequencing" as USEI04
+InventoryManagement --> Picker
+Picker --> USEI04
+
+usecase "USEI05 - Returns & Quarantine" as USEI05
+InventoryManagement --> QualityOperator
+QualityOperator --> USEI05
+
+usecase "USLP01 - Create the domain model (conceptual level)" as USLP01
+LogisticsPlanner --> USLP01
+
+usecase "USLP02 - Access Cargo Handling functionality at a Railway Terminal via a text-based interface" as USLP02
+LogisticsPlanner --> USLP02
+
+usecase "USLP03 - Calculate estimated travel time between two stations with a direct connection and a selected locomotive" as USLP03
+LogisticsPlanner --> USLP03
+
+@enduml

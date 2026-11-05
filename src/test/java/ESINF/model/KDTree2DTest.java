@@ -1,0 +1,441 @@
+package ESINF.model;
+
+import org.junit.Before;
+import org.junit.Test;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.ArrayList;
+
+import static org.junit.Assert.*;
+
+public class KDTree2DTest {
+
+    private KDTree2D tree;
+    private Station portoCampanha;
+    private Station portoSaoBento;
+    private Station aveiro;
+    private Station madridChamartin;
+    private Station lisbonOriente;
+    private List<Station> stations;
+
+    // New stations for USEI09 tests
+    private Station parisGareLyon;
+    private Station berlinHbf;
+    private Station kyivPas;
+
+    @Before
+    public void setUp() {
+        // Original Stations
+        portoCampanha = buildStation("Porto Campanhã", 41.14961, -8.61099, "PT", true, true);
+        portoSaoBento = buildStation("Porto São Bento", 41.14961, -8.61099, "PT", false, false);
+        aveiro = buildStation("Aveiro", 40.64050, -8.65370, "PT", true, false);
+        lisbonOriente = buildStation("Lisboa Oriente", 38.76792, -9.09944, "PT", true, true);
+
+        // Initialize new stations (BUT DO NOT ADD TO DEFAULT LIST)
+        // Paris (CET)
+        madridChamartin = new Station("Madrid Chamartín", 40.47295, -3.68920, "ES", "Europe/Madrid", "CET", true, true, false);
+
+        parisGareLyon = new Station("Paris-Gare-Lyon", 48.84, 2.37, "FR", "Europe/Paris", "CET", true, true, false);
+        // Berlin (CET)
+        berlinHbf = new Station("Berlin Hbf", 52.52, 13.36, "DE", "Europe/Berlin", "CET", true, true, false);
+        // Kyiv (EET)
+        kyivPas = new Station("Kyiv-Pasazhyrskyi", 50.43, 30.48, "UA", "Europe/Kyiv", "EET", true, true, false);
+
+        stations = Arrays.asList(
+                portoCampanha,
+                portoSaoBento,
+                aveiro,
+                madridChamartin,
+                lisbonOriente
+        );
+
+        tree = new KDTree2D();
+        tree.buildBalanced(stations, stations); // both lists feed the bulk-build pipeline
+    }
+
+    @Test
+    public void testBuildBalancedAggregatesStationsWithSameCoordinates() {
+        // both Porto stations must be stored on the same node bucket
+        KDTree2D.Node portoNode = tree.inOrderTraversal().stream()
+                .filter(node -> close(node.latitude, portoCampanha.getLatitude())
+                        && close(node.longitude, portoCampanha.getLongitude()))
+                .findFirst()
+                .orElse(null);
+
+        assertNotNull(portoNode);
+        assertEquals(2, portoNode.stations.size());
+        assertEquals("Porto Campanhã", portoNode.stations.get(0).getName());
+        assertEquals("Porto São Bento", portoNode.stations.get(1).getName());
+    }
+
+    @Test
+    public void testBuildBalancedWithEmptyListsCreatesEmptyTree() {
+        // building with empty lists should produce zero stats and null root
+        KDTree2D emptyTree = new KDTree2D();
+        KDTree2D.TreeStatistics stats = emptyTree.buildBalanced(Arrays.asList(), Arrays.asList());
+
+        assertEquals(0, stats.size);
+        assertEquals(0, stats.height);
+        assertTrue(stats.bucketSizes.isEmpty());
+        assertNull(emptyTree.getRoot());
+    }
+
+    @Test
+    public void testRangeSearchWithFilterReturnsAllStationsWithoutFilter() {
+        GeographicRegion iberia = new GeographicRegion(39.5, 42.5, -10.5, -3.0);
+
+        List<Station> result = tree.rangeSearchWithFilter(iberia, null);
+
+        assertEquals("All nodes within range must be returned", 4, result.size());
+        assertTrue(result.contains(portoCampanha));
+        assertTrue(result.contains(portoSaoBento));
+        assertTrue(result.contains(aveiro));
+        assertTrue(result.contains(madridChamartin));
+        long bucketEntries = result.stream()
+                .filter(s -> Math.abs(s.getLatitude() - portoCampanha.getLatitude()) < 0.000001
+                        && Math.abs(s.getLongitude() - portoCampanha.getLongitude()) < 0.000001)
+                .count();
+        assertEquals("Bucket with duplicated coordinates must surface both stations",
+                2, bucketEntries);
+    }
+
+    @Test
+    public void testRangeSearchWithFilterTraversesBothSubtreesWhenRegionStraddlesSplit() {
+        GeographicRegion northernPortugal = new GeographicRegion(40.5, 41.5, -8.8, -8.3);
+        StationFilter portugueseFilter = StationFilter.forCountry("PT");
+
+        List<Station> result = tree.rangeSearchWithFilter(northernPortugal, portugueseFilter);
+
+        assertEquals("Three Portuguese stations should lie in the filtered region", 3, result.size());
+        assertTrue(result.contains(portoCampanha));
+        assertTrue(result.contains(portoSaoBento));
+        assertTrue(result.contains(aveiro));
+    }
+
+    @Test
+    public void testRangeSearchWithFilterSupportsCompoundFilters() {
+        GeographicRegion iberia = new GeographicRegion(37.5, 42.5, -10.5, -3.0);
+        StationFilter mainStationsInPortugal = StationFilter.mainStationsInCountry("PT");
+
+        List<Station> result = tree.rangeSearchWithFilter(iberia, mainStationsInPortugal);
+
+        assertEquals(2, result.size());
+        assertTrue(result.contains(portoCampanha));
+        assertTrue(result.contains(lisbonOriente));
+    }
+
+    @Test
+    public void testRangeSearchWithFilterReturnsEmptyListOutsideRegionAndTracksTime() {
+        GeographicRegion centralEurope = new GeographicRegion(46.0, 50.0, 6.0, 15.0);
+
+        List<Station> result = tree.rangeSearchWithFilter(centralEurope, StationFilter.noFilter());
+
+        assertTrue(result.isEmpty());
+        assertTrue("Query time must be captured even when no station matches",
+                tree.getLastQueryTimeNanos() > 0);
+    }
+
+    @Test
+    public void testRangeSearchWithFilterFiltersStationsIndividuallyInsideBuckets() {
+        GeographicRegion portoArea = new GeographicRegion(41.1490, 41.1505, -8.6115, -8.6100);
+
+        List<Station> result = tree.rangeSearchWithFilter(portoArea, StationFilter.mainStationsOnly());
+
+        assertEquals(1, result.size());
+        assertTrue(result.contains(portoCampanha));
+        assertFalse(result.contains(portoSaoBento));
+    }
+
+    @Test
+    public void testRangeSearchWithFilterIncludesStationsOnBoundary() {
+        GeographicRegion lisbonBoundary = new GeographicRegion(
+                lisbonOriente.getLatitude(),
+                lisbonOriente.getLatitude(),
+                lisbonOriente.getLongitude(),
+                lisbonOriente.getLongitude()
+        );
+
+        List<Station> result = tree.rangeSearchWithFilter(lisbonBoundary, StationFilter.noFilter());
+
+        assertEquals(1, result.size());
+        assertTrue(result.contains(lisbonOriente));
+    }
+
+    @Test
+    public void testRangeSearchWithFilterCountryFilterIsCaseInsensitive() {
+        GeographicRegion iberia = new GeographicRegion(37.5, 42.5, -10.5, -3.0);
+        StationFilter lowerCaseCountry = StationFilter.forCountry("pt");
+
+        List<Station> result = tree.rangeSearchWithFilter(iberia, lowerCaseCountry);
+
+        assertEquals(4, result.size());
+        assertTrue(result.contains(portoCampanha));
+        assertTrue(result.contains(portoSaoBento));
+        assertTrue(result.contains(aveiro));
+        assertTrue(result.contains(lisbonOriente));
+    }
+
+    @Test
+    public void testRangeSearchWithFilterReturnsEmptyWhenFilterExcludesAllStations() {
+        GeographicRegion iberia = new GeographicRegion(37.5, 42.5, -10.5, -3.0);
+        StationFilter brazilOnly = StationFilter.forCountry("BR");
+
+        List<Station> result = tree.rangeSearchWithFilter(iberia, brazilOnly);
+
+        assertTrue(result.isEmpty());
+        assertTrue(tree.getLastQueryTimeNanos() > 0);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testRangeSearchWithFilterRejectsNullRegion() {
+        tree.rangeSearchWithFilter(null, StationFilter.noFilter());
+    }
+
+    // -----------------------------------------------------------------
+    // --- TESTS FOR USEI09 (Proximity Search) ---
+    // -----------------------------------------------------------------
+
+    /**
+     * Helper to build a larger tree specifically for USEI09 tests
+     * that require different Time Zones.
+     */
+    private KDTree2D buildFullTree() {
+        List<Station> allStations = new ArrayList<>(stations); // Copy original 5
+        allStations.add(parisGareLyon);
+        allStations.add(berlinHbf);
+        allStations.add(kyivPas);
+
+        KDTree2D fullTree = new KDTree2D();
+        fullTree.buildBalanced(allStations, allStations);
+        return fullTree;
+    }
+
+    @Test
+    public void testFindNearestN_SimpleCase_N_is_1() {
+        // Search near Lisbon (38, -9) for N=1. Nearest is Lisbon Oriente.
+        List<Station> results = tree.findNearestNStations(38.0, -9.0, 1, null);
+
+        assertEquals(1, results.size());
+        assertEquals(lisbonOriente.getName(), results.get(0).getName());
+    }
+
+    @Test
+    public void testFindNearestN_N_is_2_NearestIsLisbonOriente() {
+        // Search near Lisbon (38, -9) for N=2. The first is Lisbon Oriente.
+        List<Station> results = tree.findNearestNStations(38.0, -9.0, 2, null);
+
+        assertEquals(lisbonOriente.getName(), results.get(0).getName());
+    }
+
+    @Test
+    public void testFindNearestN_N_is_2_SecondNearestIsAveiro() {
+        // Search near Lisbon (38, -9) for N=2. The second is Aveiro.
+        List<Station> results = tree.findNearestNStations(38.0, -9.0, 2, null);
+
+        assertEquals(aveiro.getName(), results.get(1).getName());
+    }
+
+    @Test
+    public void testFindNearestN_N_Less_Than_X_ReturnsBothStationsInBucket() {
+        // N=1 search near Porto. Porto coord has 2 stations (a bucket). N=1 must return both.
+        List<Station> results = tree.findNearestNStations(41.15, -8.61, 1, null);
+
+        assertEquals(2, results.size());
+    }
+
+    @Test
+    public void testFindNearestN_N_Less_Than_X_ContainsPortoCampanha() {
+        // N=1 search near Porto. Porto coord has 2 stations (a bucket).
+        List<Station> results = tree.findNearestNStations(41.15, -8.61, 1, null);
+
+        assertTrue(results.contains(portoCampanha));
+    }
+
+    @Test
+    public void testFindNearestN_WithFilter_FirstNearestIsMadrid() {
+        // Full tree. Search near Lisbon (WET) for N=2, Filter: "CET".
+        // Expected: 1. Madrid (CET).
+        KDTree2D fullTree = buildFullTree();
+        TimeZoneFilter filter = new TimeZoneFilter("CET");
+        List<Station> results = fullTree.findNearestNStations(38.0, -9.0, 2, filter);
+
+        assertEquals(madridChamartin.getName(), results.get(0).getName());
+    }
+
+    @Test
+    public void testFindNearestN_WithFilter_SecondNearestIsParis() {
+        // Full tree. Search near Lisbon (WET) for N=2, Filter: "CET".
+        // Expected: 2. Paris (CET).
+        KDTree2D fullTree = buildFullTree();
+        TimeZoneFilter filter = new TimeZoneFilter("CET");
+        List<Station> results = fullTree.findNearestNStations(38.0, -9.0, 2, filter);
+
+        assertEquals(parisGareLyon.getName(), results.get(1).getName());
+    }
+
+    @Test
+    public void testFindNearestN_FilterExcludesAll_ReturnsEmpty() {
+        // Filter that does not exist in the tree.
+        TimeZoneFilter filter = new TimeZoneFilter("NonExistentGroup");
+        List<Station> results = tree.findNearestNStations(38.0, -9.0, 3, filter);
+
+        assertTrue(results.isEmpty());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testFindNearestN_N_zero_throwsException() {
+        tree.findNearestNStations(38.0, -9.0, 0, null);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testFindNearestN_N_negative_throwsException() {
+        tree.findNearestNStations(38.0, -9.0, -1, null);
+    }
+
+    @Test
+    public void testFindNearestN_N_greater_than_nodes_returns_all_stations() {
+        // N=100 on default tree (5 stations in 4 nodes). Should return all 5 stations.
+        List<Station> results = tree.findNearestNStations(38.0, -9.0, 100, null);
+
+        assertEquals(5, results.size());
+    }
+
+    @Test
+    public void testFindNearestN_EmptyTree_ReturnsEmptyList() {
+        KDTree2D emptyTree = new KDTree2D();
+        List<Station> results = emptyTree.findNearestNStations(38.0, -9.0, 3, null);
+
+        assertTrue(results.isEmpty());
+    }
+
+
+    /**
+     * Inner class or struct to hold the Synthetic Tree and its known nodes
+     * for verification.
+     */
+    private static class SyntheticTreeContext {
+        KDTree2D tree;
+        Station root, leftChild, rightChild, llChild, lrChild, rlChild, rrChild;
+    }
+
+    /**
+     * Builds a perfectly balanced tree with integer coordinates to strictly
+     * test pruning logic (Latitude split at 0, Longitude split at 0).
+     */
+    private SyntheticTreeContext buildSyntheticTree() {
+        SyntheticTreeContext ctx = new SyntheticTreeContext();
+        // Construct stations to force a specific balanced structure
+        // Root: (0,0)
+        // L: (-20, 0) | R: (20, 0)
+        // LL: (-10, -10) | LR: (-10, 10) | RL: (10, -10) | RR: (10, 10)
+
+        ctx.root = buildStation("Root", 0, 0, "X", true, true);
+        ctx.leftChild = buildStation("Left", -20, 0, "X", true, true);
+        ctx.rightChild = buildStation("Right", 20, 0, "X", true, true);
+        ctx.llChild = buildStation("LL", -10, -10, "X", true, true);
+        ctx.lrChild = buildStation("LR", -10, 10, "X", true, true);
+        ctx.rlChild = buildStation("RL", 10, -10, "X", true, true);
+        ctx.rrChild = buildStation("RR", 10, 10, "X", true, true);
+
+        List<Station> sList = Arrays.asList(
+                ctx.root, ctx.leftChild, ctx.rightChild,
+                ctx.llChild, ctx.lrChild, ctx.rlChild, ctx.rrChild
+        );
+
+        ctx.tree = new KDTree2D();
+        ctx.tree.buildBalanced(sList, sList);
+        return ctx;
+    }
+
+    @Test
+    public void testExtensive_Pruning_NorthRegion_IgnoresSouthSubtree() {
+        //         // Region: Lat [5, 30]. Root is Lat 0.
+        // Logic: MinLat (5) > NodeLat (0). Should PRUNE Left (South) Subtree.
+        // Should only look at Right Child (20, 0) and its kids.
+
+        SyntheticTreeContext ctx = buildSyntheticTree();
+        GeographicRegion northRegion = new GeographicRegion(5, 30, -50, 50);
+
+        List<Station> result = ctx.tree.rangeSearchWithFilter(northRegion, null);
+
+        // Expect: Right, RL, RR
+        assertEquals(3, result.size());
+        assertTrue(result.contains(ctx.rightChild));
+        assertTrue(result.contains(ctx.rlChild));
+        assertTrue(result.contains(ctx.rrChild));
+        assertFalse("South node (LeftChild) should be pruned", result.contains(ctx.leftChild));
+    }
+
+    @Test
+    public void testExtensive_Pruning_SouthRegion_IgnoresNorthSubtree() {
+        // Region: Lat [-30, -5]. Root is Lat 0.
+        // Logic: MaxLat (-5) < NodeLat (0). Should PRUNE Right (North) Subtree.
+
+        SyntheticTreeContext ctx = buildSyntheticTree();
+        GeographicRegion southRegion = new GeographicRegion(-30, -5, -50, 50);
+
+        List<Station> result = ctx.tree.rangeSearchWithFilter(southRegion, null);
+
+        // Expect: Left, LL, LR
+        assertEquals(3, result.size());
+        assertTrue(result.contains(ctx.leftChild));
+        assertTrue(result.contains(ctx.llChild));
+        assertTrue(result.contains(ctx.lrChild));
+        assertFalse("North node (RightChild) should be pruned", result.contains(ctx.rightChild));
+    }
+
+    @Test
+    public void testExtensive_Pruning_EastRegion_IgnoresWest_AtDepth1() {
+        // Region: Lat [5, 30] (Forces Right Subtree), Lon [5, 50] (Forces East).
+        // Right Child is C(20, 0).
+        // Logic: MinLon (5) > NodeLon (0). Should PRUNE Left Child of C (RL: 10, -10).
+        // Should keep Right Child of C (RR: 10, 10).
+
+        SyntheticTreeContext ctx = buildSyntheticTree();
+        GeographicRegion northEastRegion = new GeographicRegion(5, 30, 5, 50);
+
+        List<Station> result = ctx.tree.rangeSearchWithFilter(northEastRegion, null);
+
+        assertEquals("Should only find RR(10,10)", 1, result.size());
+        assertTrue(result.contains(ctx.rrChild));
+        assertFalse("Should prune RL based on Longitude", result.contains(ctx.rlChild));
+    }
+
+    @Test
+    public void testExtensive_Boundary_RegionStartsExactlyAtRootLat() {
+        // Region Lat [0, 10]. Root is 0.
+        // Logic: MinLat (0) <= NodeLat (0) -> Must visit Left? Yes (technically).
+        // But MaxLat (10) >= NodeLat (0) -> Must visit Right? Yes.
+        // Root should be included.
+
+        SyntheticTreeContext ctx = buildSyntheticTree();
+        GeographicRegion boundaryRegion = new GeographicRegion(0, 10, -50, 50);
+        List<Station> result = ctx.tree.rangeSearchWithFilter(boundaryRegion, null);
+
+        assertTrue("Root is on boundary 0, must be included", result.contains(ctx.root));
+        assertTrue("Right child (20) is outside [0,10] range check, but traversed", !result.contains(ctx.rightChild));
+        assertTrue("RR child (10) is on boundary 10, must be included", result.contains(ctx.rrChild));
+    }
+
+    // Helper methods
+    private Station buildStation(String name, double lat, double lon, String country,
+                                 boolean isCity, boolean isMain) {
+        return new Station(
+                name,
+                lat,
+                lon,
+                country,
+                "Europe/Lisbon",
+                "UTC+0",
+                isCity,
+                isMain,
+                false
+        );
+    }
+
+    private boolean close(double a, double b) {
+        final double EPS = 0.000001;
+        return Math.abs(a - b) < EPS;
+    }
+}

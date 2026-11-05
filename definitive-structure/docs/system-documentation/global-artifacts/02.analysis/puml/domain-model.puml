@@ -1,0 +1,291 @@
+@startuml
+skinparam monochrome true
+skinparam packageStyle rectangle
+hide circle
+hide methods
+
+title Domain Model
+
+package "Infrastructure" {
+
+    class Owner{
+        name
+    }
+
+    class RailwayLine {
+        id
+        name
+        owner
+        totalLengthKm
+    }
+
+    class LineSegment {
+        id
+        lengthKm
+        trackType
+        gauge
+        maxWeightKgPerMeter
+        speedLimitKmH
+        electrified
+    }
+
+    class Gauge {
+        id
+        measureMM
+    }
+
+    class Facility {
+        id
+        name
+        city
+        latitude
+        longitude
+        country
+        timeZone
+        timeZoneGroup
+    }
+
+    class FacilityType {
+        typeName
+    }
+
+    Owner "1" -- "*" RailwayLine : owns
+    RailwayLine "1" -- "*" LineSegment : composed of
+    Gauge "1" -- "*" LineSegment : defines
+    Facility "1" -- "*" LineSegment : occurs at
+    Facility "1" -- "*" LineSegment : start / end
+    Facility "1" -- "1" FacilityType : categorized as
+}
+
+package "Freight and Routes" {
+    class Route {
+        id
+        description
+        type
+    }
+
+    class Freight {
+        id
+        departureTime
+        arrivalTime
+        status
+    }
+
+    class CrossingOperation {
+        id
+        station
+        estimatedTime
+        trainsPriority
+    }
+
+    class FreightWagon{
+        cargoDescription
+        grossWeightKg
+        loaded
+    }
+
+    Route "1" -- "*" Freight : contains
+    Route "1" -- "*" CrossingOperation : requires
+    Route "1" -- "*" LineSegment : composed of
+    CrossingOperation "*" -- "1" Facility : occurs at
+    Freight "1" -- "*" FreightWagon : includes
+    Freight "*" -- "1" Facility : origin
+    Freight "*" -- "1" Facility : destination
+    Freight "*" -- "*" Facility : assigned to
+}
+
+package "Operators and Rolling Stock" {
+    class Operator {
+        name
+        country
+    }
+
+    class Train {
+        id
+        name
+        status
+        scheduledDeparture
+    }
+
+    class Locomotive {
+        id
+        year
+    }
+
+    class LocomotiveModel {
+        maker
+        power
+        maxSpeed
+        trackType
+        maxWeight
+        numberBogies
+        length
+        weight
+        width
+        gauge
+    }
+
+    class ElectricLocomotive extends LocomotiveModel {
+        voltageV
+        frequencyHz
+    }
+
+    class DieselLocomotive extends LocomotiveModel {
+        fuelCapacityL
+    }
+
+    class Wagon {
+        id
+        year
+    }
+
+    class WagonModel {
+        maker
+        numberBogies
+        maxSpeed
+        payloadCapacity
+        volumeCapacity
+        tareWeight
+        length
+        weight
+        width
+        height
+        gauge
+    }
+
+    class WagonModelType{
+        typeName
+    }
+
+    Operator "1" -- "*" Train : manages
+    Operator "1" -- "*" Locomotive : owns
+    Operator "1" -- "*" Wagon : owns
+
+    Train "*" -- "*" Locomotive : uses
+    Train "*" -- "*" Wagon : pulls
+    Train "1" -- "1" Route : follows
+
+    Locomotive "*" -- "1" Gauge : supports
+    Locomotive "1" -- "1" LocomotiveModel : built as
+
+    Wagon "*" -- "1" Freight: references
+    Wagon "*" -- "1" Gauge : supports
+    Wagon "1" -- "*" FreightWagon : assigned to
+    Wagon "1" -- "1" WagonModel : built as
+    Wagon "1" -- "1" WagonModelType : as
+}
+
+package "Warehouse Management" {
+    class Inventory {
+        bayCapacityBoxes
+    }
+
+    class Trolley {
+        id
+        capacityKg
+        usedWeightKg
+    }
+
+    class MovementLog {
+        timestamp
+        type
+        boxID
+        quantity
+        origin
+        destination
+    }
+
+    class Allocation {
+        orderID
+        lineNo
+        quantity
+        boxID
+        aisle
+        bay
+    }
+
+    class ReturnsEntry {
+        returnsID
+        quantity
+        timestamp
+        reason
+        expiryDate
+    }
+
+    class Coordinate {
+        aisle
+        bay
+    }
+
+    class Eligibility {
+        orderID
+        lineNo
+        requiredQty
+        allowedQty
+        status
+    }
+
+    class Order {
+        orderID
+        priority
+        dueDate
+    }
+
+    class Box {
+        boxID
+        quantity
+        entryDate
+        receivedAt
+    }
+
+    class Item {
+        sku
+        name
+        category
+        unit
+        volume
+        unitWeight
+    }
+
+    class OrderLine {
+        lineNo
+        quantity
+    }
+
+    class BayID {
+        wharehouseID
+        aisle
+        bay
+    }
+
+    Facility "1" -- "1" Inventory : manages
+
+    Inventory "1" -- "*" MovementLog : logs
+    Inventory "1" -- "*" Box : contains
+
+    Trolley "1" -- "*" Allocation : carries
+    Trolley "1" -- "*" Coordinate : visits
+
+    MovementLog "*" -- "0..1" BayID : from
+    MovementLog "*" -- "0..1" BayID : to
+    MovementLog "*" -- "1" Box : references
+
+    Allocation "*" -- "1" BayID : located at
+    Allocation "*" -- "1" Box : references
+    Allocation "*" -- "0..1" Order: allocated to
+
+    ReturnsEntry "1" -- "1" Box : restocks as
+    ReturnsEntry "*" -- "1" Item : references
+
+    BayID "1" -- "*" Box : stored in
+
+    Order "1" -- "*" OrderLine : contains
+    Order "1" -- "*" Eligibility : evaluates
+
+    OrderLine "*" -- "1" Item : references
+    OrderLine "1" -- "*" Eligibility : evaluates
+
+    Box "*" -- "1" Item : references
+}
+
+@enduml

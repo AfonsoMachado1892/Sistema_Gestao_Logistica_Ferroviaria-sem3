@@ -1,0 +1,37 @@
+@startuml
+skinparam monochrome true
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+title USEI05 - Returns & Quarantine
+
+autonumber
+
+actor "Warehouse Operator" as Operator
+participant ":System" as System
+
+activate Operator
+
+Operator -> System : initiates loading returns and provides file path
+activate System
+System --> Operator : displays load/validation summary
+deactivate System
+
+Operator -> System : initiates processing of all loaded returns
+activate System
+System --> Operator : requests confirmation to proceed
+deactivate System
+
+Operator -> System : confirms processing
+activate System
+System --> Operator : displays processing completion message
+deactivate System
+
+Operator -> System : requests to view audit log
+activate System
+System --> Operator : displays detailed audit log of all actions \n(restocked, discarded, failed)
+deactivate System
+
+deactivate Operator
+
+@enduml
